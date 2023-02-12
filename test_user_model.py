@@ -15,7 +15,7 @@ from models import db, User, Message, Follows
 # before we import our app, since that will have already
 # connected to the database
 
-os.environ['DATABASE_URL'] = "postgresql:///warbler-test"
+os.environ["DATABASE_URL"] = "postgresql:///warbler-test"
 
 
 # Now we can import app
@@ -25,8 +25,8 @@ from app import app
 # Create our tables (we do this here, so we only create the tables
 # once for all tests --- in each test, we'll delete the data
 # and create fresh new clean test data
-
-db.create_all()
+with app.app_context():
+    db.create_all()
 
 
 class UserModelTestCase(TestCase):
@@ -34,25 +34,49 @@ class UserModelTestCase(TestCase):
 
     def setUp(self):
         """Create test client, add sample data."""
+        with app.app_context():
+            User.query.delete()
+            Message.query.delete()
+            Follows.query.delete()
+            db.session.commit()
 
-        User.query.delete()
-        Message.query.delete()
-        Follows.query.delete()
-
-        self.client = app.test_client()
+            self.client = app.test_client()
 
     def test_user_model(self):
         """Does basic model work?"""
 
-        u = User(
-            email="test@test.com",
-            username="testuser",
-            password="HASHED_PASSWORD"
-        )
+        with app.app_context():
+            u = User(
+                email="test@test.com", username="testuser", password="HASHED_PASSWORD"
+            )
+            db.session.add(u)
+            db.session.commit()
 
-        db.session.add(u)
-        db.session.commit()
+            # User should have no messages & no followers
+            self.assertEqual(len(u.messages), 0)
+            self.assertEqual(len(u.followers), 0)
 
-        # User should have no messages & no followers
-        self.assertEqual(len(u.messages), 0)
-        self.assertEqual(len(u.followers), 0)
+    def test_user_following(self):
+        """Verify user model tracks who is and isn't being followed by user"""
+        with app.app_context():
+            u = User(
+                email="test@test.com", username="testuser", password="HASHED_PASSWORD"
+            )
+            following_user = User(
+                email="test1@test.com", username="testuser1", password="HASHED_PASSWORD"
+            )
+            not_following_user = User(
+                email="test2@test.com", username="testuser2", password="HASHED_PASSWORD"
+            )
+
+            db.session.add(u)
+            db.session.add(following_user)
+            db.session.add(not_following_user)
+            u.following.append(following_user)
+            db.session.commit()
+
+            # Test if 'following_user' is on user's list of following
+            self.assertEqual(u.following[0].username, "testuser1")
+
+            # Test if not_following_user doesn't show on user's list of following
+            self.assertNotIn(not_following_user, u.following)
